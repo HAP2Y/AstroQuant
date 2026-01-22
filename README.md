@@ -210,6 +210,40 @@ pivots = generator.find_pivot_points(
 )
 ```
 
+## Deployment
+
+### Streamlit Community Cloud (Free)
+
+The easiest way to deploy AstroQuant for free:
+
+1. Fork this repository to your GitHub account
+2. Go to [share.streamlit.io](https://share.streamlit.io)
+3. Sign in with your GitHub account
+4. Click "New app" and select:
+   - Repository: `your-username/AstroQuant`
+   - Branch: `main`
+   - Main file path: `app.py`
+5. Click "Deploy"
+
+Your app will be live at `https://your-app-name.streamlit.app`
+
+### Alternative Deployment Options
+
+- **Render**: Use the included `Procfile` for deployment
+- **Hugging Face Spaces**: Create a Streamlit Space and upload the code
+- **Railway**: Connect your GitHub repo for automatic deployment
+
+## CI/CD
+
+This project uses GitHub Actions for continuous integration:
+
+- **Linting**: Code quality checks with flake8
+- **Import Validation**: Ensures all modules load correctly
+- **Testing**: Runs pytest test suite
+- **Security**: Dependency vulnerability scanning
+
+Workflows run automatically on push to `main` and on pull requests.
+
 ## Disclaimer
 
 **Important:** This platform is for educational and research purposes only. Astrological analysis should not be considered financial advice. Always:
