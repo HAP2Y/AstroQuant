@@ -32,8 +32,11 @@ from ui.components import (
 from ui.visualizations import (
     create_sentiment_timeline, create_sector_heatmap, create_signal_calendar,
     create_planetary_chart, create_price_prediction_chart, create_confidence_gauge,
-    create_sector_comparison, create_transit_timeline
+    create_sector_comparison, create_transit_timeline,
+    create_calendar_heatmap, create_monthly_heatmap, create_day_of_week_analysis,
+    create_score_distribution, create_feature_importance_chart, create_best_worst_days_chart
 )
+from models.pattern_recognition import QuickPatternAnalyzer, AstroPatternRecognizer
 
 # Page configuration
 st.set_page_config(
@@ -108,7 +111,7 @@ def main():
 
         page = st.radio(
             "Select Module",
-            ["Dashboard", "Signal Finder", "Sector Intelligence",
+            ["Dashboard", "Pattern Recognition", "Signal Finder", "Sector Intelligence",
              "Market Forecast", "Personal Relevance"],
             label_visibility="collapsed"
         )
@@ -136,6 +139,8 @@ def main():
     # Main content based on selected page
     if page == "Dashboard":
         render_dashboard()
+    elif page == "Pattern Recognition":
+        render_pattern_recognition()
     elif page == "Signal Finder":
         render_signal_finder()
     elif page == "Sector Intelligence":
@@ -220,6 +225,230 @@ def render_dashboard():
     with col2:
         fig = create_planetary_chart(snapshot.positions)
         st.plotly_chart(fig, use_container_width=True)
+
+
+def render_pattern_recognition():
+    """Render the Pattern Recognition page with calendar heatmaps."""
+
+    st.markdown("## Pattern Recognition Heatmap")
+    st.markdown("""
+    Discover favorable and unfavorable trading days using our AI model trained on
+    **15 years of historical financial and Vedic astrological data**.
+    """)
+
+    # Analysis scope selection
+    st.markdown("### Select Analysis Scope")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        scope = st.selectbox(
+            "Analysis Type",
+            ["Market (Overall)", "Sector Specific", "Stock Specific"],
+            help="Choose whether to analyze the overall market, a specific sector, or individual stock"
+        )
+
+    with col2:
+        if scope == "Sector Specific":
+            sector = st.selectbox(
+                "Select Sector",
+                list(SECTOR_PLANETARY_MAP.keys())
+            )
+            ticker = None
+        elif scope == "Stock Specific":
+            ticker = st.text_input("Enter Ticker Symbol", value="AAPL").upper()
+            sector = None
+        else:
+            sector = None
+            ticker = None
+
+    # Year selection for heatmap
+    current_year = datetime.now().year
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        selected_year = st.selectbox(
+            "Heatmap Year",
+            [current_year, current_year + 1],
+            help="Select year to view forecast"
+        )
+
+    with col2:
+        forecast_days = st.slider(
+            "Forecast Days",
+            min_value=90,
+            max_value=730,
+            value=365,
+            step=30,
+            help="Number of days to forecast from today"
+        )
+
+    with col3:
+        use_quick_mode = st.checkbox(
+            "Quick Mode",
+            value=True,
+            help="Quick mode uses sentiment scores directly. Uncheck for full ML model (slower but more accurate)"
+        )
+
+    # Generate button
+    if st.button("Generate Heatmap", type="primary"):
+        scope_value = 'market' if scope == "Market (Overall)" else ('sector' if scope == "Sector Specific" else 'stock')
+        scope_name = "Market" if scope == "Market (Overall)" else (sector if sector else ticker)
+
+        with st.spinner(f"Generating calendar heatmap for {scope_name}..."):
+            try:
+                if use_quick_mode:
+                    # Use quick analyzer
+                    analyzer = QuickPatternAnalyzer()
+                    heatmap_data = analyzer.generate_quick_heatmap(
+                        start_date=datetime.now(),
+                        days=forecast_days,
+                        scope=scope_value
+                    )
+                    feature_importance = {}
+                    accuracy = None
+                else:
+                    # Use full ML model (this will take longer)
+                    st.info("Training pattern recognition model on 15 years of data... This may take a few minutes.")
+                    analyzer = AstroPatternRecognizer()
+                    analysis = analyzer.analyze(
+                        scope=scope_value,
+                        ticker=ticker,
+                        sector=sector,
+                        forecast_days=forecast_days
+                    )
+                    heatmap_data = analysis.heatmap_data
+                    feature_importance = analysis.feature_importance
+                    accuracy = analysis.accuracy
+
+                # Store in session state for persistence
+                st.session_state.heatmap_data = heatmap_data
+                st.session_state.feature_importance = feature_importance
+                st.session_state.heatmap_accuracy = accuracy
+                st.session_state.heatmap_scope = scope_name
+
+            except Exception as e:
+                st.error(f"Error generating heatmap: {str(e)}")
+                return
+
+    # Display results if available
+    if 'heatmap_data' in st.session_state and st.session_state.heatmap_data:
+        heatmap_data = st.session_state.heatmap_data
+        scope_name = st.session_state.get('heatmap_scope', 'Market')
+
+        # Summary metrics
+        st.markdown("---")
+        st.markdown(f"### {scope_name} Calendar Heatmap")
+
+        if st.session_state.get('heatmap_accuracy'):
+            st.caption(f"Model Accuracy: {st.session_state.heatmap_accuracy*100:.1f}%")
+
+        # Calculate summary stats
+        scores = heatmap_data.scores
+        avg_score = sum(scores) / len(scores) if scores else 50
+        bullish_days = len([s for s in scores if s >= 60])
+        bearish_days = len([s for s in scores if s <= 40])
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric("Avg Score", f"{avg_score:.1f}")
+
+        with col2:
+            st.metric("Bullish Days", bullish_days)
+
+        with col3:
+            st.metric("Bearish Days", bearish_days)
+
+        with col4:
+            bullish_pct = bullish_days / len(scores) * 100 if scores else 0
+            st.metric("Bullish %", f"{bullish_pct:.0f}%")
+
+        # Main calendar heatmap
+        st.markdown("### Annual Calendar Heatmap")
+        fig = create_calendar_heatmap(
+            heatmap_data,
+            year=selected_year,
+            title=f"{scope_name} Astro-Financial Outlook"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Additional visualizations in tabs
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "Monthly Breakdown", "Day Analysis", "Best/Worst Days", "Score Distribution"
+        ])
+
+        with tab1:
+            fig = create_monthly_heatmap(heatmap_data, f"{scope_name} Monthly Outlook")
+            st.plotly_chart(fig, use_container_width=True)
+
+        with tab2:
+            fig = create_day_of_week_analysis(heatmap_data, "Average Score by Day of Week")
+            st.plotly_chart(fig, use_container_width=True)
+
+        with tab3:
+            # Find best and worst days
+            sorted_data = sorted(
+                zip(heatmap_data.dates, heatmap_data.scores, heatmap_data.regimes, heatmap_data.confidence),
+                key=lambda x: x[1],
+                reverse=True
+            )
+
+            best_days = [{'date': d, 'score': s, 'regime': r, 'confidence': c}
+                        for d, s, r, c in sorted_data[:10]]
+            worst_days = [{'date': d, 'score': s, 'regime': r, 'confidence': c}
+                         for d, s, r, c in sorted_data[-10:]]
+
+            fig = create_best_worst_days_chart(best_days, worst_days)
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Detailed lists
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("#### Top 10 Best Days")
+                for day in best_days:
+                    st.markdown(f"**{day['date'].strftime('%b %d, %Y')}** - Score: {day['score']:.0f} ({day['regime']})")
+
+            with col2:
+                st.markdown("#### Top 10 Worst Days")
+                for day in worst_days:
+                    st.markdown(f"**{day['date'].strftime('%b %d, %Y')}** - Score: {day['score']:.0f} ({day['regime']})")
+
+        with tab4:
+            fig = create_score_distribution(heatmap_data, "Score Distribution")
+            st.plotly_chart(fig, use_container_width=True)
+
+        # Feature importance (if available from full model)
+        if st.session_state.get('feature_importance'):
+            st.markdown("### Pattern Feature Importance")
+            st.markdown("These astrological features have the strongest correlation with market movements:")
+            fig = create_feature_importance_chart(
+                st.session_state.feature_importance,
+                "Top Predictive Features"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        # Interpretation guide
+        with st.expander("How to Read the Heatmap"):
+            st.markdown("""
+            ### Color Guide
+            - **Dark Green (75-100)**: Strong Bullish - Favorable cosmic alignment for gains
+            - **Light Green (60-74)**: Bullish - Generally positive conditions
+            - **Yellow (40-59)**: Neutral - Mixed signals, exercise caution
+            - **Orange (25-39)**: Bearish - Challenging conditions
+            - **Red (0-24)**: Strong Bearish - Unfavorable cosmic weather
+
+            ### Using the Heatmap
+            1. **Best Days**: Look for dark green patches for optimal entry points
+            2. **Avoid**: Red patches indicate higher risk periods
+            3. **Weekly Patterns**: Check the day-of-week analysis for recurring patterns
+            4. **Monthly Outlook**: See which months have stronger cosmic support
+
+            ### Disclaimer
+            This analysis combines Vedic astrology with machine learning for educational purposes.
+            Always conduct your own research and consult financial advisors before making investment decisions.
+            """)
 
 
 def render_signal_finder():
